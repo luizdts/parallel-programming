@@ -24,11 +24,9 @@ main()
 
     printf("reading input file \n");
 
-#pragma omp parallel private(i, j, k)
     f = fopen("snapshot_u1", "r");
     k = -1;
 
-#pragma omp for
     for (j = 0; j < isnp; j++)
     {
         for (i = 0; i < ndof; i++)
@@ -46,16 +44,19 @@ main()
 
     // allocate an "array of arrays" of int
     A = (double **)malloc(ndof * sizeof(double *));
-#pragma omp for
+
+#pragma omp parallel for private(row)
     for (row = 0; row < ndof; row++)
     {
         A[row] = (double *)malloc(isnp * sizeof(double));
     }
 
     k = -1;
-#pragma omp for
+
+#pragma omp parallel for private(i)
     for (i = 0; i < ndof; i++)
     {
+#pragma omp parallel for private(j) shared(A, X)
         for (j = 0; j < isnp; j++)
         {
             k++;
@@ -71,7 +72,7 @@ main()
     double **v;
     v = (double **)malloc(isnp * sizeof(double *));
 
-#pragma omp for
+#pragma omp parallel for private(row)
     for (row = 0; row < isnp; row++)
     {
         v[row] = (double *)malloc(isnp * sizeof(double));
@@ -83,7 +84,7 @@ main()
     printf("done with svd \n");
 
     f = fopen("w.dat", "w+");
-#pragma omp for
+#pragma omp parallel for private(i)
     for (i = 0; i < isnp; i++)
     {
         fprintf(f, "%d %f\n", i, w[i]);
@@ -98,15 +99,16 @@ main()
     // allocate an "array of arrays" of int
     AT = (double **)malloc(isnp * sizeof(double *));
 
-#pragma omp for
+#pragma omp parallel for private(row)
     for (row = 0; row < isnp; row++)
     {
         AT[row] = (double *)malloc(ndof * sizeof(double));
     }
 
-#pragma omp for
+#pragma omp parallel for private(i)
     for (i = 0; i < ndof; i++)
     {
+#pragma omp parallel for private(j) shared(A, AT)
         for (j = 0; j < isnp; j++)
         {
             AT[j][i] = A[i][j];
@@ -118,7 +120,7 @@ main()
     // allocate an "array of arrays" of int
     Iden = (double **)malloc(isnp * sizeof(double *));
 
-#pragma omp for
+#pragma omp parallel for private(row)
     for (row = 0; row < isnp; row++)
     {
         Iden[row] = (double *)malloc(isnp * sizeof(double));
@@ -130,9 +132,10 @@ main()
 
     double s1 = 0.0;
     double s2 = 0.0;
-
+#pragma omp parallel for private(i)
     for (i = 0; i < isnp; i++)
     {
+#pragma omp parallel for private(j)
         for (j = 0; j < isnp; j++)
         {
             if (i == j)
@@ -147,5 +150,6 @@ main()
 
     printf("sum of diagonals = %f \n", s1);
     printf("sum of off-diagonals = %f \n", s2);
+
     //------------------------------------
 }
