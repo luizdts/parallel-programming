@@ -47,7 +47,8 @@ int dsvd(double **a, int m, int n, double *w, double **v)
 {
 
     int flag, i, its, j, jj, k, l, nm;
-    double c, f, h, s, x, y, z;
+    double c, f, h, x, y, z;
+    double s = 0.0;
     double anorm = 0.0, g = 0.0, scale = 0.0;
     double *rv1;
 
@@ -60,7 +61,7 @@ int dsvd(double **a, int m, int n, double *w, double **v)
     rv1 = (double *)malloc((unsigned int)n * sizeof(double));
 
     /* Householder reduction to bidiagonal form */
-    #pragma omp parallel default(none) private(i, j, jj, k, l, anorm, flag, its, nm, c, y, z) shared(a, f, rv1, h, g, x) firstprivate(m, n, w, v, stderr) reduction(+ : scale, s)
+    #pragma omp parallel default(none) private(i, j, jj, k, l, anorm, flag, f, g, its, nm, c, y, z, h) shared(rv1, x) firstprivate(a, m, n, w, v, stderr) reduction(+ : scale, s)
     {   
         #pragma omp for
         for (i = 0; i < n; i++)
@@ -202,135 +203,136 @@ int dsvd(double **a, int m, int n, double *w, double **v)
         }
         
         /* diagonalize the bidiagonal form */
-        for (k = n - 1; k >= 0; k--)
+
+        #pragma omp single 
         {
-            /* loop over singular values */
-            for (its = 0; its < 30; its++)
+            for (k = n - 1; k >= 0; k--)
             {
-                /* loop over allowed iterations */
-                flag = 1;
-                for (l = k; l >= 0; l--)
+                /* loop over singular values */
+                for (its = 0; its < 30; its++)
                 {
-                    /* test for splitting */
-                    nm = l - 1;
-                    if (fabs(rv1[l]) + anorm == anorm)
+                    /* loop over allowed iterations */
+                    flag = 1;
+                    for (l = k; l >= 0 && flag; l--)
                     {
-                        flag = 0;
-                        break;
-                    }
-                    if (fabs((double)w[nm]) + anorm == anorm)
-                        break;
-                }
-
-                if (flag)
-                {
-                    c = 0.0;
-                    s = 1.0;
-                    for (i = l; i <= k; i++)
-                    {
-                        f = s * rv1[i];
-                        if (fabs(f) + anorm != anorm)
+                        /* test for splitting */
+                        nm = l - 1;
+                        if (fabs(rv1[l]) + anorm == anorm)
                         {
-                            g = (double)w[i];
-                            h = PYTHAG(f, g);
-                            w[i] = (double)h;
-                            h = 1.0 / h;
-                            c = g * h;
-                            s = (-f * h);
+                            flag = 0;
+                        }
+                        if (fabs((double)w[nm]) + anorm == anorm)
+                            flag = 0;
+                    }
 
-                            for (j = 0; j < m; j++)
+                    if (flag)
+                    {
+                        c = 0.0;
+                        s = 1.0;
+                        for (i = l; i <= k; i++)
+                        {
+                            f = s * rv1[i];
+                            if (fabs(f) + anorm != anorm)
                             {
-                                y = (double)a[j][nm];
-                                z = (double)a[j][i];
-                                a[j][nm] = (double)(y * c + z * s);
-                                a[j][i] = (double)(z * c - y * s);
+                                g = (double)w[i];
+                                h = PYTHAG(f, g);
+                                w[i] = (double)h;
+                                h = 1.0 / h;
+                                c = g * h;
+                                s = (-f * h);
+
+                                for (j = 0; j < m; j++)
+                                {
+                                    y = (double)a[j][nm];
+                                    z = (double)a[j][i];
+                                    a[j][nm] = (double)(y * c + z * s);
+                                    a[j][i] = (double)(z * c - y * s);
+                                }
                             }
                         }
                     }
-                }
 
-                z = (double)w[k];
-                #pragma omp single
-                if (l == k)
-                {
-                    /* convergence */
-                    if (z < 0.0)
+                    z = (double)w[k];
+                    if (l == k)
                     {
-                        /* make singular value nonnegative */
-                        w[k] = (double)(-z);
+                        /* convergence */
+                        if (z < 0.0)
+                        {
+                            /* make singular value nonnegative */
+                            w[k] = (double)(-z);
 
-                        for (j = 0; j < n; j++)
-                            v[j][k] = (-v[j][k]);
+                            for (j = 0; j < n; j++)
+                                v[j][k] = (-v[j][k]);
+                        }
+                        break;
                     }
-                    //break;
-                }
-                if (its >= 30)
-                {
-                    free((void *)rv1);
-                    fprintf(stderr, "No convergence after 30,000! iterations \n");
-                        //return (0);
-                }
-
-                /* shift from bottom 2 x 2 minor */
-                x = (double)w[l];
-                nm = k - 1;
-                y = (double)w[nm];
-                g = rv1[nm];
-                h = rv1[k];
-                f = ((y - z) * (y + z) + (g - h) * (g + h)) / (2.0 * h * y);
-                g = PYTHAG(f, 1.0);
-                f = ((x - z) * (x + z) + h * ((y / (f + SIGN(g, f))) - h)) / x;
-
-                /* next QR transformation */
-                c = s = 1.0;
-
-                #pragma omp for
-                for (j = l; j <= nm; j++)
-                {
-                    i = j + 1;
-                    g = rv1[i];
-                    y = (double)w[i];
-                    h = s * g;
-                    g = c * g;
-                    z = PYTHAG(f, h);
-                    rv1[j] = z;
-                    c = f / z;
-                    s = h / z;
-                    f = x * c + g * s;
-                    g = g * c - x * s;
-                    h = y * s;
-                    y = y * c;
-
-                    for (jj = 0; jj < n; jj++)
+                    if (its >= 30)
                     {
-                        x = (double)v[jj][j];
-                        z = (double)v[jj][i];
-                        v[jj][j] = (double)(x * c + z * s);
-                        v[jj][i] = (double)(z * c - x * s);
+                        free((void *)rv1);
+                        fprintf(stderr, "No convergence after 30,000! iterations \n");
+                        exit(0);
                     }
-                    z = PYTHAG(f, h);
-                    w[j] = (double)z;
-                    if (z)
-                    {
-                        z = 1.0 / z;
-                        c = f * z;
-                        s = h * z;
-                    }
-                    f = (c * g) + (s * y);
-                    x = (c * y) - (s * g);
 
-                    for (jj = 0; jj < m; jj++)
+                    /* shift from bottom 2 x 2 minor */
+                    x = (double)w[l];
+                    nm = k - 1;
+                    y = (double)w[nm];
+                    g = rv1[nm];
+                    h = rv1[k];
+                    f = ((y - z) * (y + z) + (g - h) * (g + h)) / (2.0 * h * y);
+                    g = PYTHAG(f, 1.0);
+                    f = ((x - z) * (x + z) + h * ((y / (f + SIGN(g, f))) - h)) / x;
+
+                    /* next QR transformation */
+                    c = s = 1.0;
+
+                    for (j = l; j <= nm; j++)
                     {
-                        y = (double)a[jj][j];
-                        z = (double)a[jj][i];
-                        a[jj][j] = (double)(y * c + z * s);
-                        a[jj][i] = (double)(z * c - y * s);
+                        i = j + 1;
+                        g = rv1[i];
+                        y = (double)w[i];
+                        h = s * g;
+                        g = c * g;
+                        z = PYTHAG(f, h);
+                        rv1[j] = z;
+                        c = f / z;
+                        s = h / z;
+                        f = x * c + g * s;
+                        g = g * c - x * s;
+                        h = y * s;
+                        y = y * c;
+
+                        for (jj = 0; jj < n; jj++)
+                        {
+                            x = (double)v[jj][j];
+                            z = (double)v[jj][i];
+                            v[jj][j] = (double)(x * c + z * s);
+                            v[jj][i] = (double)(z * c - x * s);
+                        }
+                        z = PYTHAG(f, h);
+                        w[j] = (double)z;
+                        if (z)
+                        {
+                            z = 1.0 / z;
+                            c = f * z;
+                            s = h * z;
+                        }
+                        f = (c * g) + (s * y);
+                        x = (c * y) - (s * g);
+
+                        for (jj = 0; jj < m; jj++)
+                        {
+                            y = (double)a[jj][j];
+                            z = (double)a[jj][i];
+                            a[jj][j] = (double)(y * c + z * s);
+                            a[jj][i] = (double)(z * c - y * s);
+                        }
                     }
+                    
+                    rv1[l] = 0.0;
+                    rv1[k] = f;
+                    w[k] = (double)x;
                 }
-                
-                rv1[l] = 0.0;
-                rv1[k] = f;
-                w[k] = (double)x;
             }
         }
     }
