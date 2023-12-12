@@ -22,6 +22,8 @@
 
 #include "defs_and_types.h"
 
+#define thread_count 8
+
 static double PYTHAG(double a, double b)
 {
 
@@ -42,16 +44,15 @@ static double PYTHAG(double a, double b)
 
     return (result);
 }
-
+   
 int dsvd(double **a, int m, int n, double *w, double **v)
 {
-
+    double start = 0.0, end = 0.0, exec_time = 0.0;
     int flag, i, its, j, jj, k, l, nm;
     double c, f, h, x, y, z;
     double s = 0.0;
     double anorm = 0.0, g = 0.0, scale = 0.0;
     double *rv1;
-
     if (m < n)
     {
         fprintf(stderr, "#rows must be > #cols \n");
@@ -61,7 +62,7 @@ int dsvd(double **a, int m, int n, double *w, double **v)
     rv1 = (double *)malloc((unsigned int)n * sizeof(double));
 
     /* Householder reduction to bidiagonal form */
-    #pragma omp parallel default(none) private(i, j, jj, k, l, anorm, flag, f, g, its, nm, c, y, z, h) shared(rv1, x) firstprivate(a, m, n, w, v, stderr) reduction(+ : scale, s)
+    #pragma omp parallel default(none) private(i, j, jj, k, l, anorm, flag, f, g, its, nm, c, y, z, h) shared(rv1, x) firstprivate(a, m, n, w, v, stderr) reduction(+ : scale, s) num_threads(thread_count)
     {   
         #pragma omp for
         for (i = 0; i < n; i++)
@@ -201,11 +202,9 @@ int dsvd(double **a, int m, int n, double *w, double **v)
             }
             ++a[i][i];
         }
-        
+    }
         /* diagonalize the bidiagonal form */
-
-        #pragma omp single 
-        {
+            start = omp_get_wtime();
             for (k = n - 1; k >= 0; k--)
             {
                 /* loop over singular values */
@@ -213,7 +212,7 @@ int dsvd(double **a, int m, int n, double *w, double **v)
                 {
                     /* loop over allowed iterations */
                     flag = 1;
-                    for (l = k; l >= 0 && flag; l--)
+                    for (l = k; l >= 0; l--)
                     {
                         /* test for splitting */
                         nm = l - 1;
@@ -270,7 +269,7 @@ int dsvd(double **a, int m, int n, double *w, double **v)
                     {
                         free((void *)rv1);
                         fprintf(stderr, "No convergence after 30,000! iterations \n");
-                        exit(0);
+                        //return(0);
                     }
 
                     /* shift from bottom 2 x 2 minor */
@@ -334,8 +333,10 @@ int dsvd(double **a, int m, int n, double *w, double **v)
                     w[k] = (double)x;
                 }
             }
-        }
-    }
-    free((void *)rv1);
+            end = omp_get_wtime();
+
+    exec_time = end - start;
+    printf("TEMPO: %f", exec_time);
+    //free(rv1);
     return (1);
 }
