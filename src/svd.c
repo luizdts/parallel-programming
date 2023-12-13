@@ -22,8 +22,6 @@
 
 #include "defs_and_types.h"
 
-#define thread_count 8
-
 static double PYTHAG(double a, double b)
 {
 
@@ -61,8 +59,11 @@ int dsvd(double **a, int m, int n, double *w, double **v)
 
     rv1 = (double *)malloc((unsigned int)n * sizeof(double));
 
+    printf("Começando o dsvd!\n");
     /* Householder reduction to bidiagonal form */
-    #pragma omp parallel default(none) private(i, j, jj, k, l, anorm, flag, f, g, its, nm, c, y, z, h) shared(rv1, x) firstprivate(a, m, n, w, v, stderr) reduction(+ : scale, s) num_threads(thread_count)
+    #pragma omp parallel private(i, j, jj, k, l, anorm, its, c, nm, x, y, z, f, g, h) \
+        shared(m, n, a, w, v, rv1) \
+        firstprivate(start, end, exec_time) reduction(+ : scale, s) num_threads(8)
     {   
         #pragma omp for
         for (i = 0; i < n; i++)
@@ -140,9 +141,9 @@ int dsvd(double **a, int m, int n, double *w, double **v)
                             a[i][k] = (double)((double)a[i][k] * scale);
                     }
                 }
-
+                printf("Estou no anorm!\n");
                 anorm = MAX(anorm, (fabs((double)w[i]) + fabs(rv1[i])));
-            }
+        }
         /* accumulate the right-hand transformation */
         #pragma omp for
         for (i = n - 1; i >= 0; i--)
@@ -168,6 +169,7 @@ int dsvd(double **a, int m, int n, double *w, double **v)
             v[i][i] = 1.0;
             g = rv1[i];
             l = i;
+            printf("mao direita!\n");
         }
         /* accumulate the left-hand transformation */
         #pragma omp for
@@ -178,6 +180,7 @@ int dsvd(double **a, int m, int n, double *w, double **v)
             if (i < n - 1)
                 for (j = l; j < n; j++)
                     a[i][j] = 0.0;
+            #pragma omp critical
             if (g)
             {
                 g = 1.0 / g;
@@ -201,142 +204,150 @@ int dsvd(double **a, int m, int n, double *w, double **v)
                     a[j][i] = 0.0;
             }
             ++a[i][i];
+            printf("Mão esquerda!!!! %d", i);
         }
-    }
+
         /* diagonalize the bidiagonal form */
-            start = omp_get_wtime();
-            for (k = n - 1; k >= 0; k--)
+        // start = omp_get_wtime();
+        #pragma omp single
+        {
+
+        printf("Estou indo para a diagonalização agora.");
+        for (k = n - 1; k >= 0; k--)
+        {
+            /* loop over singular values */
+            for (its = 0; its < 30; its++)
             {
-                /* loop over singular values */
-                for (its = 0; its < 30; its++)
+                /* loop over allowed iterations */
+                flag = 1;
+                for (l = k; l >= 0; l--)
                 {
-                    /* loop over allowed iterations */
-                    flag = 1;
-                    for (l = k; l >= 0; l--)
+                    /* test for splitting */
+                    nm = l - 1;
+                    if (fabs(rv1[l]) + anorm == anorm)
                     {
-                        /* test for splitting */
-                        nm = l - 1;
-                        if (fabs(rv1[l]) + anorm == anorm)
-                        {
-                            flag = 0;
-                        }
-                        if (fabs((double)w[nm]) + anorm == anorm)
-                            flag = 0;
+                        flag = 0;
+                        break;
                     }
-
-                    if (flag)
+                    if (fabs((double)w[nm]) + anorm == anorm)
+                        break;
+                }
+                if (flag)
+                {
+                    c = 0.0;
+                    s = 1.0;
+                    for (i = l; i <= k; i++)
                     {
-                        c = 0.0;
-                        s = 1.0;
-                        for (i = l; i <= k; i++)
+                        f = s * rv1[i];
+                        if (fabs(f) + anorm != anorm)
                         {
-                            f = s * rv1[i];
-                            if (fabs(f) + anorm != anorm)
-                            {
-                                g = (double)w[i];
-                                h = PYTHAG(f, g);
-                                w[i] = (double)h;
-                                h = 1.0 / h;
-                                c = g * h;
-                                s = (-f * h);
+                            g = (double)w[i];
+                            h = PYTHAG(f, g);
+                            w[i] = (double)h;
+                            h = 1.0 / h;
+                            c = g * h;
+                            s = (-f * h);
 
-                                for (j = 0; j < m; j++)
-                                {
-                                    y = (double)a[j][nm];
-                                    z = (double)a[j][i];
-                                    a[j][nm] = (double)(y * c + z * s);
-                                    a[j][i] = (double)(z * c - y * s);
-                                }
+                            for (j = 0; j < m; j++)
+                            {
+                                y = (double)a[j][nm];
+                                z = (double)a[j][i];
+                                a[j][nm] = (double)(y * c + z * s);
+                                a[j][i] = (double)(z * c - y * s);
+                                printf("%d", i);
                             }
                         }
                     }
-
-                    z = (double)w[k];
-                    if (l == k)
-                    {
-                        /* convergence */
-                        if (z < 0.0)
-                        {
-                            /* make singular value nonnegative */
-                            w[k] = (double)(-z);
-
-                            for (j = 0; j < n; j++)
-                                v[j][k] = (-v[j][k]);
-                        }
-                        break;
-                    }
-                    if (its >= 30)
-                    {
-                        free((void *)rv1);
-                        fprintf(stderr, "No convergence after 30,000! iterations \n");
-                        //return(0);
-                    }
-
-                    /* shift from bottom 2 x 2 minor */
-                    x = (double)w[l];
-                    nm = k - 1;
-                    y = (double)w[nm];
-                    g = rv1[nm];
-                    h = rv1[k];
-                    f = ((y - z) * (y + z) + (g - h) * (g + h)) / (2.0 * h * y);
-                    g = PYTHAG(f, 1.0);
-                    f = ((x - z) * (x + z) + h * ((y / (f + SIGN(g, f))) - h)) / x;
-
-                    /* next QR transformation */
-                    c = s = 1.0;
-
-                    for (j = l; j <= nm; j++)
-                    {
-                        i = j + 1;
-                        g = rv1[i];
-                        y = (double)w[i];
-                        h = s * g;
-                        g = c * g;
-                        z = PYTHAG(f, h);
-                        rv1[j] = z;
-                        c = f / z;
-                        s = h / z;
-                        f = x * c + g * s;
-                        g = g * c - x * s;
-                        h = y * s;
-                        y = y * c;
-
-                        for (jj = 0; jj < n; jj++)
-                        {
-                            x = (double)v[jj][j];
-                            z = (double)v[jj][i];
-                            v[jj][j] = (double)(x * c + z * s);
-                            v[jj][i] = (double)(z * c - x * s);
-                        }
-                        z = PYTHAG(f, h);
-                        w[j] = (double)z;
-                        if (z)
-                        {
-                            z = 1.0 / z;
-                            c = f * z;
-                            s = h * z;
-                        }
-                        f = (c * g) + (s * y);
-                        x = (c * y) - (s * g);
-
-                        for (jj = 0; jj < m; jj++)
-                        {
-                            y = (double)a[jj][j];
-                            z = (double)a[jj][i];
-                            a[jj][j] = (double)(y * c + z * s);
-                            a[jj][i] = (double)(z * c - y * s);
-                        }
-                    }
-                    
-                    rv1[l] = 0.0;
-                    rv1[k] = f;
-                    w[k] = (double)x;
                 }
-            }
-            end = omp_get_wtime();
 
-    exec_time = end - start;
-    printf("TEMPO: %f", exec_time);
-    //free(rv1);
+                z = (double)w[k];
+                if (l == k)
+                {
+                    /* convergence */
+                    if (z < 0.0)
+                    {
+                        /* make singular value nonnegative */
+                        w[k] = (double)(-z);
+
+                        for (j = 0; j < n; j++)
+                            v[j][k] = (-v[j][k]);
+                    }
+                    break;
+                }
+                if (its >= 30)
+                {
+                    free(rv1);
+                    fprintf(stderr, "No convergence after 30,000! iterations \n");
+                   // return(0);
+                }
+
+                /* shift from bottom 2 x 2 minor */
+                x = (double)w[l];
+                nm = k - 1;
+                y = (double)w[nm];
+                g = rv1[nm];
+                h = rv1[k];
+                f = ((y - z) * (y + z) + (g - h) * (g + h)) / (2.0 * h * y);
+                g = PYTHAG(f, 1.0);
+                f = ((x - z) * (x + z) + h * ((y / (f + SIGN(g, f))) - h)) / x;
+
+                /* next QR transformation */
+                c = s = 1.0;
+
+                for (j = l; j <= nm; j++)
+                {
+                    i = j + 1;
+                    g = rv1[i];
+                    y = (double)w[i];
+                    h = s * g;
+                    g = c * g;
+                    z = PYTHAG(f, h);
+                    rv1[j] = z;
+                    c = f / z;
+                    s = h / z;
+                    f = x * c + g * s;
+                    g = g * c - x * s;
+                    h = y * s;
+                    y = y * c;
+
+                    for (jj = 0; jj < n; jj++)
+                    {
+                        x = (double)v[jj][j];
+                        z = (double)v[jj][i];
+                        v[jj][j] = (double)(x * c + z * s);
+                        v[jj][i] = (double)(z * c - x * s);
+                    }
+                    z = PYTHAG(f, h);
+                    w[j] = (double)z;
+                    if (z)
+                    {
+                        z = 1.0 / z;
+                        c = f * z;
+                        s = h * z;
+                    }
+                    f = (c * g) + (s * y);
+                    x = (c * y) - (s * g);
+
+                    for (jj = 0; jj < m; jj++)
+                    {
+                        y = (double)a[jj][j];
+                        z = (double)a[jj][i];
+                        a[jj][j] = (double)(y * c + z * s);
+                        a[jj][i] = (double)(z * c - y * s);
+                    }
+                }
+                
+                rv1[l] = 0.0;
+                rv1[k] = f;
+                w[k] = (double)x;
+            }
+        }
+        }
+
+    }
+        // end = omp_get_wtime();
+        // exec_time = end - start;
+        // printf("TEMPO: %f", exec_time);
+    free(rv1);
     return (1);
 }

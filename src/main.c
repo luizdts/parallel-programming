@@ -13,8 +13,6 @@ const int isnp = 250;
 
 main() {
 
-    omp_set_num_threads(4);
-
     int i, j, k;
     FILE *f;
 
