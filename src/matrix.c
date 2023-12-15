@@ -11,8 +11,7 @@ void matrix_mult(int n1, int n2, int n3, double **A, double **B, double **C)
     #pragma omp parallel \
         private(i, j, k) \
         shared(A, B, C) \
-        firstprivate(sum) \
-        num_threads(2)
+        firstprivate(sum)
     {
         #pragma omp for
         for (i = 0; i < n1; i++)
