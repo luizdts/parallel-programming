@@ -6,7 +6,7 @@
 #include "svd.h"
 #include "matrix.h"
 
-const int ndof = 300 * 100;
+const int ndof = 300 * 100 * 7;
 const int isnp = 250;
 
 //------------------------------------
