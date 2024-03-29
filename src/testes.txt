@@ -1,0 +1,6 @@
+- testar com 1, 2, 4, 8, 16, 32 threads e aumentar o tamanho do problema
+
+- terminar slides de apresentacao
+
+- ver como esta o relatorio e finalizar
+
