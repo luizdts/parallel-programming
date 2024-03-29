@@ -27,10 +27,8 @@ int main(int argc, char* argv[])
 
     f = fopen("snapshot_u1", "r");
     k = -1;
-    for (j = 0; j < isnp; j++)
-    {
-        for (i = 0; i < ndof; i++)
-        {
+    for (j = 0; j < isnp; j++) {
+        for (i = 0; i < ndof; i++) {
             k++;
             fscanf(f, "%lf \n", &X[k]);
         }
@@ -45,16 +43,15 @@ int main(int argc, char* argv[])
     // allocate an "array of arrays" of int
     A = (double **)malloc(ndof * sizeof(double *));
 
-    for (row = 0; row < ndof; row++)
-    {
+    for (row = 0; row < ndof; row++) {
+
         A[row] = (double *)malloc(isnp * sizeof(double));
     }
 
     k = -1;
-    for (i = 0; i < ndof; i++)
-    {
-        for (j = 0; j < isnp; j++)
-        {
+
+    for (i = 0; i < ndof; i++) {
+        for (j = 0; j < isnp; j++) {
             k++;
             A[i][j] = X[k];
         }
@@ -68,8 +65,7 @@ int main(int argc, char* argv[])
     double **v;
     v = (double **)malloc(isnp * sizeof(double *));
 
-    for (row = 0; row < isnp; row++)
-    {
+    for (row = 0; row < isnp; row++) {
         v[row] = (double *)malloc(isnp * sizeof(double));
     }
 
@@ -77,8 +73,8 @@ int main(int argc, char* argv[])
     printf("done with svd \n");
 
     f = fopen("w.dat", "w+");
-    for (i = 0; i < isnp; i++)
-    {
+
+    for (i = 0; i < isnp; i++) {
         fprintf(f, "%d %f\n", i, w[i]);
     }
     fclose(f);
@@ -97,10 +93,8 @@ int main(int argc, char* argv[])
         AT[row] = (double *)malloc(ndof * sizeof(double));
     }
 
-    for (i = 0; i < ndof; i++)
-    {
-        for (j = 0; j < isnp; j++)
-        {
+    for (i = 0; i < ndof; i++) {
+        for (j = 0; j < isnp; j++) {
             AT[j][i] = A[i][j];
         }
     }
@@ -110,8 +104,7 @@ int main(int argc, char* argv[])
     // allocate an "array of arrays" of int
     Iden = (double **)malloc(isnp * sizeof(double *));
 
-    for (row = 0; row < isnp; row++)
-    {
+    for (row = 0; row < isnp; row++) {
         Iden[row] = (double *)malloc(isnp * sizeof(double));
     }
 
